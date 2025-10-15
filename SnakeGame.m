@@ -392,90 +392,110 @@ SPoint snake[MAX_SNAKE_LENGTH];
 
 // Helper method to draw snake with curved corners
 - (void)drawSnakeWithCurvedCorners:(NSMutableData *)vertexData cellWidth:(float)cellWidth cellHeight:(float)cellHeight {
+    float segmentSize = cellWidth * 0.9f;  // Size of snake segments
+    
     for (int i = 0; i < self.snakeLength; i++) {
         float x = -1.0 + (visualPositions[i].x + 0.5f) * cellWidth;
         float y = 1.0 - (visualPositions[i].y + 0.5f) * cellHeight;
         vector_float4 color = (i == 0) ? (vector_float4){0.0, 1.0, 0.0, 1.0} : (vector_float4){0.0, 0.8, 0.0, 1.0};
         
-        // Check if this segment is at a corner
-        BOOL isCorner = NO;
-        Direction prevDir = DIR_RIGHT; // Default
-        Direction nextDir = DIR_RIGHT; // Default
+        // Determine directions to previous and next segments using logical positions
+        int prevDx = 0, prevDy = 0, nextDx = 0, nextDy = 0;
+        BOOL hasPrev = NO, hasNext = NO;
         
-        if (i > 0 && i < self.snakeLength - 1) {
-            // Calculate direction from previous segment to current
-            int dx1 = snake[i].x - snake[i-1].x;
-            int dy1 = snake[i].y - snake[i-1].y;
-            
-            // Calculate direction from current to next segment
-            int dx2 = snake[i+1].x - snake[i].x;
-            int dy2 = snake[i+1].y - snake[i].y;
-            
-            // Check if there's a direction change (corner)
-            if ((dx1 != 0 && dx2 == 0) || (dx1 == 0 && dx2 != 0)) {
-                isCorner = YES;
-                
-                // Determine directions
-                if (dx1 > 0) prevDir = DIR_RIGHT;
-                else if (dx1 < 0) prevDir = DIR_LEFT;
-                else if (dy1 > 0) prevDir = DIR_DOWN;
-                else if (dy1 < 0) prevDir = DIR_UP;
-                
-                if (dx2 > 0) nextDir = DIR_RIGHT;
-                else if (dx2 < 0) nextDir = DIR_LEFT;
-                else if (dy2 > 0) nextDir = DIR_DOWN;
-                else if (dy2 < 0) nextDir = DIR_UP;
-            }
+        if (i > 0) {
+            prevDx = snake[i].x - snake[i-1].x;
+            prevDy = snake[i].y - snake[i-1].y;
+            hasPrev = YES;
+        }
+        
+        if (i < self.snakeLength - 1) {
+            nextDx = snake[i+1].x - snake[i].x;
+            nextDy = snake[i+1].y - snake[i].y;
+            hasNext = YES;
+        }
+        
+        // Check if this is a corner (perpendicular direction change)
+        BOOL isCorner = NO;
+        if (hasPrev && hasNext) {
+            isCorner = ((prevDx != 0 && nextDy != 0) || (prevDy != 0 && nextDx != 0));
         }
         
         if (isCorner) {
-            // Draw curved corner using a quarter circle and two rectangles
-            float segSize = cellWidth * 0.9;
-            float radius = segSize * 0.5f;
+            // Draw corner with smooth rounded edges
+            // Approach: Draw an L-shaped body with a rounded outer corner
             
-            // Determine which quarter circle to draw based on directions
-            float angle1 = 0, angle2 = M_PI / 2;
-            float rectX1 = 0, rectY1 = 0, rectX2 = 0, rectY2 = 0;
+            float halfSize = segmentSize * 0.5f;
+            float radius = segmentSize * 0.5f;
             
-            // Determine the corner type and position rectangles accordingly
-            if ((prevDir == DIR_RIGHT && nextDir == DIR_DOWN) || (prevDir == DIR_UP && nextDir == DIR_LEFT)) {
-                angle1 = 0; angle2 = M_PI / 2;
-                rectX1 = x - radius; rectY1 = y;
-                rectX2 = x; rectY2 = y + radius;
-            } else if ((prevDir == DIR_DOWN && nextDir == DIR_RIGHT) || (prevDir == DIR_LEFT && nextDir == DIR_UP)) {
-                angle1 = -M_PI / 2; angle2 = 0;
-                rectX1 = x + radius; rectY1 = y;
-                rectX2 = x; rectY2 = y - radius;
-            } else if ((prevDir == DIR_LEFT && nextDir == DIR_DOWN) || (prevDir == DIR_UP && nextDir == DIR_RIGHT)) {
-                angle1 = M_PI / 2; angle2 = M_PI;
-                rectX1 = x + radius; rectY1 = y;
-                rectX2 = x; rectY2 = y + radius;
-            } else if ((prevDir == DIR_DOWN && nextDir == DIR_LEFT) || (prevDir == DIR_RIGHT && nextDir == DIR_UP)) {
-                angle1 = M_PI; angle2 = 3 * M_PI / 2;
-                rectX1 = x - radius; rectY1 = y;
-                rectX2 = x; rectY2 = y - radius;
+            // Draw center square
+            [self addQuadToVertexData:vertexData x:x y:y width:segmentSize height:segmentSize color:color];
+            
+            // Convert grid directions to screen offsets (remember Y is flipped)
+            float prevScreenX = prevDx * cellWidth;
+            float prevScreenY = -prevDy * cellHeight;
+            float nextScreenX = nextDx * cellWidth;
+            float nextScreenY = -nextDy * cellHeight;
+            
+            // Draw arm extending toward previous segment
+            if (prevDx != 0) {
+                // Horizontal arm
+                float armX = x + prevScreenX * 0.5f;
+                [self addQuadToVertexData:vertexData x:armX y:y width:halfSize height:segmentSize color:color];
+            } else {
+                // Vertical arm
+                float armY = y + prevScreenY * 0.5f;
+                [self addQuadToVertexData:vertexData x:x y:armY width:segmentSize height:halfSize color:color];
             }
             
-            // Draw the curved corner using a filled arc
-            int arcSegments = 8;
-            float angleStep = (angle2 - angle1) / arcSegments;
-            for (int j = 0; j < arcSegments; j++) {
-                float a1 = angle1 + j * angleStep;
-                float a2 = angle1 + (j + 1) * angleStep;
+            // Draw arm extending toward next segment
+            if (nextDx != 0) {
+                // Horizontal arm
+                float armX = x + nextScreenX * 0.5f;
+                [self addQuadToVertexData:vertexData x:armX y:y width:halfSize height:segmentSize color:color];
+            } else {
+                // Vertical arm
+                float armY = y + nextScreenY * 0.5f;
+                [self addQuadToVertexData:vertexData x:x y:armY width:segmentSize height:halfSize color:color];
+            }
+            
+            // Now add a rounded quarter-circle on the OUTSIDE of the corner
+            // The "outside" is the side away from the inside angle
+            
+            // Determine the outside corner position
+            float outerCornerX = x + (prevScreenX + nextScreenX) * 0.5f;
+            float outerCornerY = y + (prevScreenY + nextScreenY) * 0.5f;
+            
+            // Calculate the angle for the arc
+            // We draw from the end of one arm to the end of the other arm
+            float angle1 = atan2f(prevScreenY, prevScreenX);
+            float angle2 = atan2f(nextScreenY, nextScreenX);
+            
+            // Ensure we draw the arc in the correct direction (the outside arc)
+            float angleDiff = angle2 - angle1;
+            
+            // Normalize to [-PI, PI]
+            while (angleDiff > M_PI) angleDiff -= 2 * M_PI;
+            while (angleDiff < -M_PI) angleDiff += 2 * M_PI;
+            
+            // Draw the quarter circle arc
+            int numSegments = 10;
+            for (int j = 0; j < numSegments; j++) {
+                float t1 = (float)j / numSegments;
+                float t2 = (float)(j + 1) / numSegments;
+                float a1 = angle1 + angleDiff * t1;
+                float a2 = angle1 + angleDiff * t2;
                 
-                Vertex v0 = {{x, y}, color};
-                Vertex v1 = {{x + cos(a1) * radius, y + sin(a1) * radius}, color};
-                Vertex v2 = {{x + cos(a2) * radius, y + sin(a2) * radius}, color};
+                Vertex v0 = {{outerCornerX, outerCornerY}, color};
+                Vertex v1 = {{outerCornerX + cosf(a1) * radius, outerCornerY + sinf(a1) * radius}, color};
+                Vertex v2 = {{outerCornerX + cosf(a2) * radius, outerCornerY + sinf(a2) * radius}, color};
                 
                 Vertex triangle[] = {v0, v1, v2};
                 [vertexData appendBytes:triangle length:sizeof(triangle)];
             }
             
-            // Add connecting rectangles
-            [self addQuadToVertexData:vertexData x:rectX1 y:rectY1 width:radius height:radius*0.2f color:color];
-            [self addQuadToVertexData:vertexData x:rectX2 y:rectY2 width:radius*0.2f height:radius color:color];
         } else {
-            // Draw regular segment
+            // Draw regular straight segment
             [self addQuadToVertexData:vertexData x:x y:y width:cellWidth * 0.9 height:cellHeight * 0.9 color:color];
         }
     }
