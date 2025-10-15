@@ -16,6 +16,12 @@ typedef enum {
     DIR_LEFT
 } Direction;
 
+typedef enum {
+    GAME_STATE_START,
+    GAME_STATE_PLAYING,
+    GAME_STATE_GAME_OVER
+} GameState;
+
 @interface SnakeGame : MTKView <MTKViewDelegate>
 
 @property (strong, nonatomic) id<MTLDevice> device;
@@ -26,6 +32,8 @@ typedef enum {
 @property (nonatomic) Direction nextDirection;
 @property (nonatomic) int snakeLength;
 @property (nonatomic) BOOL gameOver;
+@property (nonatomic) GameState gameState;
+@property (nonatomic) int score;
 @property (strong, nonatomic) NSTimer *gameTimer;
 @property (strong, nonatomic) NSTimer *displayTimer; // Added for smooth animation
 
