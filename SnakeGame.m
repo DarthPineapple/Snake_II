@@ -116,7 +116,9 @@ SPoint snake[MAX_SNAKE_LENGTH];
     self.direction = DIR_RIGHT;
     self.nextDirection = DIR_RIGHT;
     self.gameOver = NO;
-    NSLog(@"Game Started");
+    self.gameState = GAME_STATE_START;
+    self.score = 0;
+    NSLog(@"Game Initialized - Press SPACE to start");
     for (int i = 0; i < self.snakeLength; i++) {
         snake[i] = (SPoint){GRID_WIDTH / 2 - i, GRID_HEIGHT / 2};
         prevSnake[i] = snake[i];
@@ -148,7 +150,7 @@ SPoint snake[MAX_SNAKE_LENGTH];
 }
 
 - (void)updateGame {
-    if (self.gameOver) return;
+    if (self.gameOver || self.gameState != GAME_STATE_PLAYING) return;
 
     self.direction = self.nextDirection;
 
@@ -163,6 +165,7 @@ SPoint snake[MAX_SNAKE_LENGTH];
     if (newHead.x < 0 || newHead.x >= GRID_WIDTH ||
         newHead.y < 0 || newHead.y >= GRID_HEIGHT) {
         self.gameOver = YES;
+        self.gameState = GAME_STATE_GAME_OVER;
         return;
     }
 
@@ -172,6 +175,7 @@ SPoint snake[MAX_SNAKE_LENGTH];
     for (int i = 1; i < self.snakeLength; i++) {
         if (snake[i].x == newHead.x && snake[i].y == newHead.y) {
             self.gameOver = YES;
+            self.gameState = GAME_STATE_GAME_OVER;
             return;
         }
     }
@@ -185,6 +189,7 @@ SPoint snake[MAX_SNAKE_LENGTH];
             snake[self.snakeLength] = tail;
             prevSnake[self.snakeLength] = tail;
             self.snakeLength++;
+            self.score += 10; // Increment score
         }
         // Move body segments but preserve the tail
         for (int i = self.snakeLength - 1; i > 0; i--) {
@@ -244,30 +249,39 @@ SPoint snake[MAX_SNAKE_LENGTH];
     unichar key = chars.length > 0 ? [chars characterAtIndex:0] : 0;
     switch (event.keyCode) {
         case 126: // Up arrow
-            if (self.direction != DIR_DOWN) self.nextDirection = DIR_UP;
+            if (self.gameState == GAME_STATE_PLAYING && self.direction != DIR_DOWN) self.nextDirection = DIR_UP;
             break;
         case 125: // Down arrow
-            if (self.direction != DIR_UP) self.nextDirection = DIR_DOWN;
+            if (self.gameState == GAME_STATE_PLAYING && self.direction != DIR_UP) self.nextDirection = DIR_DOWN;
             break;
         case 123: // Left arrow
-            if (self.direction != DIR_RIGHT) self.nextDirection = DIR_LEFT;
+            if (self.gameState == GAME_STATE_PLAYING && self.direction != DIR_RIGHT) self.nextDirection = DIR_LEFT;
             break;
         case 124: // Right arrow
-            if (self.direction != DIR_LEFT) self.nextDirection = DIR_RIGHT;
+            if (self.gameState == GAME_STATE_PLAYING && self.direction != DIR_LEFT) self.nextDirection = DIR_RIGHT;
             break;
         case 49: // Space
-            if (self.gameOver) [self initGame];
+            if (self.gameState == GAME_STATE_START) {
+                self.gameState = GAME_STATE_PLAYING;
+                NSLog(@"Game Started!");
+            } else if (self.gameOver) {
+                [self initGame];
+            }
             break;
         default:
             // WASD and Vim keys
-            if ((key == 'w' || key == 'k') && self.direction != DIR_DOWN) {
-                self.nextDirection = DIR_UP;
-            } else if ((key == 's' || key == 'j') && self.direction != DIR_UP) {
-                self.nextDirection = DIR_DOWN;
-            } else if ((key == 'a' || key == 'h') && self.direction != DIR_RIGHT) {
-                self.nextDirection = DIR_LEFT;
-            } else if ((key == 'd' || key == 'l') && self.direction != DIR_LEFT) {
-                self.nextDirection = DIR_RIGHT;
+            if (self.gameState == GAME_STATE_PLAYING) {
+                if ((key == 'w' || key == 'k') && self.direction != DIR_DOWN) {
+                    self.nextDirection = DIR_UP;
+                } else if ((key == 's' || key == 'j') && self.direction != DIR_UP) {
+                    self.nextDirection = DIR_DOWN;
+                } else if ((key == 'a' || key == 'h') && self.direction != DIR_RIGHT) {
+                    self.nextDirection = DIR_LEFT;
+                } else if ((key == 'd' || key == 'l') && self.direction != DIR_LEFT) {
+                    self.nextDirection = DIR_RIGHT;
+                } else {
+                    [super keyDown:event];
+                }
             } else {
                 [super keyDown:event];
             }
@@ -307,68 +321,22 @@ SPoint snake[MAX_SNAKE_LENGTH];
         float cellWidth = 2.0 / GRID_WIDTH;
         float cellHeight = 2.0 / GRID_HEIGHT;
 
-        // Draw snake using interpolated visual positions
-        for (int i = 0; i < self.snakeLength; i++) {
-            // Use visual positions (interpolated) instead of grid positions
-            float x = -1.0 + (visualPositions[i].x + 0.5f) * cellWidth;
-            float y = 1.0 - (visualPositions[i].y + 0.5f) * cellHeight; // Flip y-axis
-            vector_float4 color = (i == 0) ? (vector_float4){0.0, 1.0, 0.0, 1.0} : (vector_float4){0.0, 0.8, 0.0, 1.0};
+        if (self.gameState == GAME_STATE_START) {
+            // Draw start screen
+            [self drawStartScreen:vertexData];
+        } else {
+            // Draw snake using interpolated visual positions with curved corners
+            [self drawSnakeWithCurvedCorners:vertexData cellWidth:cellWidth cellHeight:cellHeight];
 
-            [self addQuadToVertexData:vertexData x:x y:y width:cellWidth * 0.9 height:cellHeight * 0.9 color:color];
-        }
+            // Draw food - fix Y coordinate mapping
+            float fx = -1.0 + (self.food.x + 0.5f) * cellWidth;
+            float fy = 1.0 - (self.food.y + 0.5f) * cellHeight; // Flip y-axis
+            [self addQuadToVertexData:vertexData x:fx y:fy width:cellWidth * 0.8 height:cellHeight * 0.8 color:(vector_float4){1.0, 0.0, 0.0, 1.0}];
 
-        // Draw food - fix Y coordinate mapping
-        float fx = -1.0 + (self.food.x + 0.5f) * cellWidth;
-        float fy = 1.0 - (self.food.y + 0.5f) * cellHeight; // Flip y-axis
-        [self addQuadToVertexData:vertexData x:fx y:fy width:cellWidth * 0.8 height:cellHeight * 0.8 color:(vector_float4){1.0, 0.0, 0.0, 1.0}];
-
-        // Draw game over screen
-        if (self.gameOver) {
-            // Semi-transparent overlay
-            [self addQuadToVertexData:vertexData x:0.0f y:0.0f width:2.0f height:2.0f color:(vector_float4){0.0, 0.0, 0.0, 0.7}];
-            
-            // "GAME OVER" text using simple rectangles - position from center (0,0)
-            vector_float4 textColor = (vector_float4){1.0, 1.0, 1.0, 1.0};
-            float blockSize = 0.08f;
-            float spacing = 0.1f;
-            float startX = -0.45f; // Adjusted for better centering
-            float startY = 0.2f;
-            
-            // G
-            [self drawLetterG:vertexData x:startX y:startY size:blockSize color:textColor];
-            // A
-            [self drawLetterA:vertexData x:startX + spacing y:startY size:blockSize color:textColor];
-            // M
-            [self drawLetterM:vertexData x:startX + spacing * 2 y:startY size:blockSize color:textColor];
-            // E
-            [self drawLetterE:vertexData x:startX + spacing * 3 y:startY size:blockSize color:textColor];
-            
-            // O
-            [self drawLetterO:vertexData x:startX + spacing * 5 y:startY size:blockSize color:textColor];
-            // V
-            [self drawLetterV:vertexData x:startX + spacing * 6 y:startY size:blockSize color:textColor];
-            // E
-            [self drawLetterE:vertexData x:startX + spacing * 7 y:startY size:blockSize color:textColor];
-            // R
-            [self drawLetterR:vertexData x:startX + spacing * 8 y:startY size:blockSize color:textColor];
-            
-            // "Press SPACE to restart" message
-            float msgY = -0.1f;
-            float msgBlockSize = 0.04f;
-            float msgSpacing = 0.06f; // Adjusted for better spacing
-            float msgStartX = -0.3f;  // Adjusted for better centering
-            
-            [self drawLetterP:vertexData x:msgStartX y:msgY size:msgBlockSize color:textColor];
-            [self drawLetterR:vertexData x:msgStartX + msgSpacing y:msgY size:msgBlockSize color:textColor];
-            [self drawLetterE:vertexData x:msgStartX + msgSpacing * 2 y:msgY size:msgBlockSize color:textColor];
-            [self drawLetterS:vertexData x:msgStartX + msgSpacing * 3 y:msgY size:msgBlockSize color:textColor];
-            [self drawLetterS:vertexData x:msgStartX + msgSpacing * 4 y:msgY size:msgBlockSize color:textColor];
-            
-            [self drawLetterS:vertexData x:msgStartX + msgSpacing * 6 y:msgY size:msgBlockSize color:textColor];
-            [self drawLetterP:vertexData x:msgStartX + msgSpacing * 7 y:msgY size:msgBlockSize color:textColor];
-            [self drawLetterA:vertexData x:msgStartX + msgSpacing * 8 y:msgY size:msgBlockSize color:textColor];
-            [self drawLetterC:vertexData x:msgStartX + msgSpacing * 9 y:msgY size:msgBlockSize color:textColor];
-            [self drawLetterE:vertexData x:msgStartX + msgSpacing * 10 y:msgY size:msgBlockSize color:textColor];
+            // Draw game over screen
+            if (self.gameOver) {
+                [self drawGameOverScreen:vertexData];
+            }
         }
         
         NSUInteger vertexCount = vertexData.length / sizeof(Vertex);
@@ -403,6 +371,265 @@ SPoint snake[MAX_SNAKE_LENGTH];
     // Create two triangles with correct winding order
     Vertex quad[] = {v0, v2, v1, v2, v3, v1}; // split into two clockwise triangles
     [vertexData appendBytes:quad length:sizeof(quad)];
+}
+
+// Helper method to add a circle (for curved corners)
+- (void)addCircleToVertexData:(NSMutableData *)vertexData x:(float)x y:(float)y radius:(float)r color:(vector_float4)color segments:(int)segments {
+    float angleStep = (M_PI * 2.0f) / segments;
+    
+    for (int i = 0; i < segments; i++) {
+        float angle1 = i * angleStep;
+        float angle2 = (i + 1) * angleStep;
+        
+        Vertex v0 = {{x, y}, color}; // Center
+        Vertex v1 = {{x + cos(angle1) * r, y + sin(angle1) * r}, color};
+        Vertex v2 = {{x + cos(angle2) * r, y + sin(angle2) * r}, color};
+        
+        Vertex triangle[] = {v0, v1, v2};
+        [vertexData appendBytes:triangle length:sizeof(triangle)];
+    }
+}
+
+// Helper method to draw snake with curved corners
+- (void)drawSnakeWithCurvedCorners:(NSMutableData *)vertexData cellWidth:(float)cellWidth cellHeight:(float)cellHeight {
+    for (int i = 0; i < self.snakeLength; i++) {
+        float x = -1.0 + (visualPositions[i].x + 0.5f) * cellWidth;
+        float y = 1.0 - (visualPositions[i].y + 0.5f) * cellHeight;
+        vector_float4 color = (i == 0) ? (vector_float4){0.0, 1.0, 0.0, 1.0} : (vector_float4){0.0, 0.8, 0.0, 1.0};
+        
+        // Check if this segment is at a corner
+        BOOL isCorner = NO;
+        Direction prevDir = DIR_RIGHT; // Default
+        Direction nextDir = DIR_RIGHT; // Default
+        
+        if (i > 0 && i < self.snakeLength - 1) {
+            // Calculate direction from previous segment to current
+            int dx1 = snake[i].x - snake[i-1].x;
+            int dy1 = snake[i].y - snake[i-1].y;
+            
+            // Calculate direction from current to next segment
+            int dx2 = snake[i+1].x - snake[i].x;
+            int dy2 = snake[i+1].y - snake[i].y;
+            
+            // Check if there's a direction change (corner)
+            if ((dx1 != 0 && dx2 == 0) || (dx1 == 0 && dx2 != 0)) {
+                isCorner = YES;
+                
+                // Determine directions
+                if (dx1 > 0) prevDir = DIR_RIGHT;
+                else if (dx1 < 0) prevDir = DIR_LEFT;
+                else if (dy1 > 0) prevDir = DIR_DOWN;
+                else if (dy1 < 0) prevDir = DIR_UP;
+                
+                if (dx2 > 0) nextDir = DIR_RIGHT;
+                else if (dx2 < 0) nextDir = DIR_LEFT;
+                else if (dy2 > 0) nextDir = DIR_DOWN;
+                else if (dy2 < 0) nextDir = DIR_UP;
+            }
+        }
+        
+        if (isCorner) {
+            // Draw curved corner using a quarter circle and two rectangles
+            float segSize = cellWidth * 0.9;
+            float radius = segSize * 0.5f;
+            
+            // Determine which quarter circle to draw based on directions
+            float angle1 = 0, angle2 = M_PI / 2;
+            float rectX1 = 0, rectY1 = 0, rectX2 = 0, rectY2 = 0;
+            
+            // Determine the corner type and position rectangles accordingly
+            if ((prevDir == DIR_RIGHT && nextDir == DIR_DOWN) || (prevDir == DIR_UP && nextDir == DIR_LEFT)) {
+                angle1 = 0; angle2 = M_PI / 2;
+                rectX1 = x - radius; rectY1 = y;
+                rectX2 = x; rectY2 = y + radius;
+            } else if ((prevDir == DIR_DOWN && nextDir == DIR_RIGHT) || (prevDir == DIR_LEFT && nextDir == DIR_UP)) {
+                angle1 = -M_PI / 2; angle2 = 0;
+                rectX1 = x + radius; rectY1 = y;
+                rectX2 = x; rectY2 = y - radius;
+            } else if ((prevDir == DIR_LEFT && nextDir == DIR_DOWN) || (prevDir == DIR_UP && nextDir == DIR_RIGHT)) {
+                angle1 = M_PI / 2; angle2 = M_PI;
+                rectX1 = x + radius; rectY1 = y;
+                rectX2 = x; rectY2 = y + radius;
+            } else if ((prevDir == DIR_DOWN && nextDir == DIR_LEFT) || (prevDir == DIR_RIGHT && nextDir == DIR_UP)) {
+                angle1 = M_PI; angle2 = 3 * M_PI / 2;
+                rectX1 = x - radius; rectY1 = y;
+                rectX2 = x; rectY2 = y - radius;
+            }
+            
+            // Draw the curved corner using a filled arc
+            int arcSegments = 8;
+            float angleStep = (angle2 - angle1) / arcSegments;
+            for (int j = 0; j < arcSegments; j++) {
+                float a1 = angle1 + j * angleStep;
+                float a2 = angle1 + (j + 1) * angleStep;
+                
+                Vertex v0 = {{x, y}, color};
+                Vertex v1 = {{x + cos(a1) * radius, y + sin(a1) * radius}, color};
+                Vertex v2 = {{x + cos(a2) * radius, y + sin(a2) * radius}, color};
+                
+                Vertex triangle[] = {v0, v1, v2};
+                [vertexData appendBytes:triangle length:sizeof(triangle)];
+            }
+            
+            // Add connecting rectangles
+            [self addQuadToVertexData:vertexData x:rectX1 y:rectY1 width:radius height:radius*0.2f color:color];
+            [self addQuadToVertexData:vertexData x:rectX2 y:rectY2 width:radius*0.2f height:radius color:color];
+        } else {
+            // Draw regular segment
+            [self addQuadToVertexData:vertexData x:x y:y width:cellWidth * 0.9 height:cellHeight * 0.9 color:color];
+        }
+    }
+}
+
+// Draw start screen
+- (void)drawStartScreen:(NSMutableData *)vertexData {
+    // Background
+    [self addQuadToVertexData:vertexData x:0.0f y:0.0f width:2.0f height:2.0f color:(vector_float4){0.0, 0.2, 0.0, 1.0}];
+    
+    // Title: "SNAKE II"
+    vector_float4 titleColor = (vector_float4){0.0, 1.0, 0.0, 1.0};
+    float titleSize = 0.12f;
+    float titleSpacing = 0.15f;
+    float titleStartX = -0.45f;
+    float titleY = 0.4f;
+    
+    [self drawLetterS:vertexData x:titleStartX y:titleY size:titleSize color:titleColor];
+    [self drawLetterN:vertexData x:titleStartX + titleSpacing y:titleY size:titleSize color:titleColor];
+    [self drawLetterA:vertexData x:titleStartX + titleSpacing * 2 y:titleY size:titleSize color:titleColor];
+    [self drawLetterK:vertexData x:titleStartX + titleSpacing * 3 y:titleY size:titleSize color:titleColor];
+    [self drawLetterE:vertexData x:titleStartX + titleSpacing * 4 y:titleY size:titleSize color:titleColor];
+    
+    [self drawLetterI:vertexData x:titleStartX + titleSpacing * 5.5f y:titleY size:titleSize color:titleColor];
+    [self drawLetterI:vertexData x:titleStartX + titleSpacing * 6.2f y:titleY size:titleSize color:titleColor];
+    
+    // Instructions
+    vector_float4 instructColor = (vector_float4){0.8, 0.8, 0.8, 1.0};
+    float instrSize = 0.05f;
+    float instrSpacing = 0.07f;
+    
+    // "PRESS SPACE"
+    float line1Y = 0.0f;
+    float line1StartX = -0.35f;
+    [self drawLetterP:vertexData x:line1StartX y:line1Y size:instrSize color:instructColor];
+    [self drawLetterR:vertexData x:line1StartX + instrSpacing y:line1Y size:instrSize color:instructColor];
+    [self drawLetterE:vertexData x:line1StartX + instrSpacing * 2 y:line1Y size:instrSize color:instructColor];
+    [self drawLetterS:vertexData x:line1StartX + instrSpacing * 3 y:line1Y size:instrSize color:instructColor];
+    [self drawLetterS:vertexData x:line1StartX + instrSpacing * 4 y:line1Y size:instrSize color:instructColor];
+    
+    [self drawLetterS:vertexData x:line1StartX + instrSpacing * 6 y:line1Y size:instrSize color:instructColor];
+    [self drawLetterP:vertexData x:line1StartX + instrSpacing * 7 y:line1Y size:instrSize color:instructColor];
+    [self drawLetterA:vertexData x:line1StartX + instrSpacing * 8 y:line1Y size:instrSize color:instructColor];
+    [self drawLetterC:vertexData x:line1StartX + instrSpacing * 9 y:line1Y size:instrSize color:instructColor];
+    [self drawLetterE:vertexData x:line1StartX + instrSpacing * 10 y:line1Y size:instrSize color:instructColor];
+    
+    // "TO START"
+    float line2Y = -0.15f;
+    float line2StartX = -0.25f;
+    [self drawLetterT:vertexData x:line2StartX y:line2Y size:instrSize color:instructColor];
+    [self drawLetterO:vertexData x:line2StartX + instrSpacing y:line2Y size:instrSize color:instructColor];
+    
+    [self drawLetterS:vertexData x:line2StartX + instrSpacing * 3 y:line2Y size:instrSize color:instructColor];
+    [self drawLetterT:vertexData x:line2StartX + instrSpacing * 4 y:line2Y size:instrSize color:instructColor];
+    [self drawLetterA:vertexData x:line2StartX + instrSpacing * 5 y:line2Y size:instrSize color:instructColor];
+    [self drawLetterR:vertexData x:line2StartX + instrSpacing * 6 y:line2Y size:instrSize color:instructColor];
+    [self drawLetterT:vertexData x:line2StartX + instrSpacing * 7 y:line2Y size:instrSize color:instructColor];
+    
+    // Controls info
+    float controlsY = -0.45f;
+    float controlsSize = 0.04f;
+    float controlsSpacing = 0.06f;
+    float controlsStartX = -0.3f;
+    
+    // "USE ARROW KEYS"
+    [self drawLetterU:vertexData x:controlsStartX y:controlsY size:controlsSize color:instructColor];
+    [self drawLetterS:vertexData x:controlsStartX + controlsSpacing y:controlsY size:controlsSize color:instructColor];
+    [self drawLetterE:vertexData x:controlsStartX + controlsSpacing * 2 y:controlsY size:controlsSize color:instructColor];
+    
+    [self drawLetterA:vertexData x:controlsStartX + controlsSpacing * 4 y:controlsY size:controlsSize color:instructColor];
+    [self drawLetterR:vertexData x:controlsStartX + controlsSpacing * 5 y:controlsY size:controlsSize color:instructColor];
+    [self drawLetterR:vertexData x:controlsStartX + controlsSpacing * 6 y:controlsY size:controlsSize color:instructColor];
+    [self drawLetterO:vertexData x:controlsStartX + controlsSpacing * 7 y:controlsY size:controlsSize color:instructColor];
+    [self drawLetterW:vertexData x:controlsStartX + controlsSpacing * 8 y:controlsY size:controlsSize color:instructColor];
+    
+    [self drawLetterK:vertexData x:controlsStartX + controlsSpacing * 10 y:controlsY size:controlsSize color:instructColor];
+    [self drawLetterE:vertexData x:controlsStartX + controlsSpacing * 11 y:controlsY size:controlsSize color:instructColor];
+    [self drawLetterY:vertexData x:controlsStartX + controlsSpacing * 12 y:controlsY size:controlsSize color:instructColor];
+    [self drawLetterS:vertexData x:controlsStartX + controlsSpacing * 13 y:controlsY size:controlsSize color:instructColor];
+}
+
+// Draw improved game over screen
+- (void)drawGameOverScreen:(NSMutableData *)vertexData {
+    // Semi-transparent overlay
+    [self addQuadToVertexData:vertexData x:0.0f y:0.0f width:2.0f height:2.0f color:(vector_float4){0.0, 0.0, 0.0, 0.8}];
+    
+    // "GAME OVER" text
+    vector_float4 textColor = (vector_float4){1.0, 0.2, 0.2, 1.0}; // Red color
+    float blockSize = 0.1f;
+    float spacing = 0.12f;
+    float startX = -0.5f;
+    float startY = 0.3f;
+    
+    [self drawLetterG:vertexData x:startX y:startY size:blockSize color:textColor];
+    [self drawLetterA:vertexData x:startX + spacing y:startY size:blockSize color:textColor];
+    [self drawLetterM:vertexData x:startX + spacing * 2 y:startY size:blockSize color:textColor];
+    [self drawLetterE:vertexData x:startX + spacing * 3 y:startY size:blockSize color:textColor];
+    
+    [self drawLetterO:vertexData x:startX + spacing * 5 y:startY size:blockSize color:textColor];
+    [self drawLetterV:vertexData x:startX + spacing * 6 y:startY size:blockSize color:textColor];
+    [self drawLetterE:vertexData x:startX + spacing * 7 y:startY size:blockSize color:textColor];
+    [self drawLetterR:vertexData x:startX + spacing * 8 y:startY size:blockSize color:textColor];
+    
+    // Score display
+    vector_float4 scoreColor = (vector_float4){1.0, 1.0, 0.0, 1.0}; // Yellow
+    float scoreSize = 0.06f;
+    float scoreSpacing = 0.08f;
+    float scoreY = 0.0f;
+    float scoreStartX = -0.25f;
+    
+    // "SCORE:"
+    [self drawLetterS:vertexData x:scoreStartX y:scoreY size:scoreSize color:scoreColor];
+    [self drawLetterC:vertexData x:scoreStartX + scoreSpacing y:scoreY size:scoreSize color:scoreColor];
+    [self drawLetterO:vertexData x:scoreStartX + scoreSpacing * 2 y:scoreY size:scoreSize color:scoreColor];
+    [self drawLetterR:vertexData x:scoreStartX + scoreSpacing * 3 y:scoreY size:scoreSize color:scoreColor];
+    [self drawLetterE:vertexData x:scoreStartX + scoreSpacing * 4 y:scoreY size:scoreSize color:scoreColor];
+    
+    // Draw score digits (simple implementation for numbers 0-999)
+    float digitX = scoreStartX + scoreSpacing * 5.5f;
+    int displayScore = self.score;
+    if (displayScore > 999) displayScore = 999;
+    
+    int hundreds = displayScore / 100;
+    int tens = (displayScore / 10) % 10;
+    int ones = displayScore % 10;
+    
+    if (hundreds > 0) {
+        [self drawDigit:vertexData digit:hundreds x:digitX y:scoreY size:scoreSize color:scoreColor];
+        digitX += scoreSpacing * 0.8f;
+    }
+    if (hundreds > 0 || tens > 0) {
+        [self drawDigit:vertexData digit:tens x:digitX y:scoreY size:scoreSize color:scoreColor];
+        digitX += scoreSpacing * 0.8f;
+    }
+    [self drawDigit:vertexData digit:ones x:digitX y:scoreY size:scoreSize color:scoreColor];
+    
+    // "Press SPACE to restart" message
+    vector_float4 msgColor = (vector_float4){1.0, 1.0, 1.0, 1.0};
+    float msgY = -0.25f;
+    float msgBlockSize = 0.05f;
+    float msgSpacing = 0.07f;
+    float msgStartX = -0.35f;
+    
+    [self drawLetterP:vertexData x:msgStartX y:msgY size:msgBlockSize color:msgColor];
+    [self drawLetterR:vertexData x:msgStartX + msgSpacing y:msgY size:msgBlockSize color:msgColor];
+    [self drawLetterE:vertexData x:msgStartX + msgSpacing * 2 y:msgY size:msgBlockSize color:msgColor];
+    [self drawLetterS:vertexData x:msgStartX + msgSpacing * 3 y:msgY size:msgBlockSize color:msgColor];
+    [self drawLetterS:vertexData x:msgStartX + msgSpacing * 4 y:msgY size:msgBlockSize color:msgColor];
+    
+    [self drawLetterS:vertexData x:msgStartX + msgSpacing * 6 y:msgY size:msgBlockSize color:msgColor];
+    [self drawLetterP:vertexData x:msgStartX + msgSpacing * 7 y:msgY size:msgBlockSize color:msgColor];
+    [self drawLetterA:vertexData x:msgStartX + msgSpacing * 8 y:msgY size:msgBlockSize color:msgColor];
+    [self drawLetterC:vertexData x:msgStartX + msgSpacing * 9 y:msgY size:msgBlockSize color:msgColor];
+    [self drawLetterE:vertexData x:msgStartX + msgSpacing * 10 y:msgY size:msgBlockSize color:msgColor];
 }
 
 // Helper methods to draw simple block letters
@@ -534,6 +761,117 @@ SPoint snake[MAX_SNAKE_LENGTH];
 - (void)mouseDown:(NSEvent *)event {
     if (self.window) {
         [self.window makeFirstResponder:self];
+    }
+}
+
+- (void)drawLetterC:(NSMutableData *)data x:(float)x y:(float)y size:(float)s color:(vector_float4)c {
+    [self addQuadToVertexData:data x:x y:y width:s*0.8f height:s*0.2f color:c]; // top
+    [self addQuadToVertexData:data x:x-s*0.3f y:y-s*0.5f width:s*0.2f height:s*1.0f color:c]; // left
+    [self addQuadToVertexData:data x:x y:y-s*1.0f width:s*0.8f height:s*0.2f color:c]; // bottom
+}
+
+- (void)drawLetterN:(NSMutableData *)data x:(float)x y:(float)y size:(float)s color:(vector_float4)c {
+    [self addQuadToVertexData:data x:x-s*0.3f y:y-s*0.5f width:s*0.2f height:s*1.2f color:c]; // left
+    [self addQuadToVertexData:data x:x+s*0.3f y:y-s*0.5f width:s*0.2f height:s*1.2f color:c]; // right
+    [self addQuadToVertexData:data x:x y:y-s*0.5f width:s*0.15f height:s*1.0f color:c]; // diagonal
+}
+
+- (void)drawLetterK:(NSMutableData *)data x:(float)x y:(float)y size:(float)s color:(vector_float4)c {
+    [self addQuadToVertexData:data x:x-s*0.3f y:y-s*0.5f width:s*0.2f height:s*1.2f color:c]; // left
+    [self addQuadToVertexData:data x:x+s*0.2f y:y-s*0.2f width:s*0.15f height:s*0.6f color:c]; // top right diagonal
+    [self addQuadToVertexData:data x:x+s*0.2f y:y-s*0.8f width:s*0.15f height:s*0.6f color:c]; // bottom right diagonal
+}
+
+- (void)drawLetterI:(NSMutableData *)data x:(float)x y:(float)y size:(float)s color:(vector_float4)c {
+    [self addQuadToVertexData:data x:x y:y width:s*0.6f height:s*0.2f color:c]; // top
+    [self addQuadToVertexData:data x:x y:y-s*0.5f width:s*0.2f height:s*1.0f color:c]; // middle
+    [self addQuadToVertexData:data x:x y:y-s*1.0f width:s*0.6f height:s*0.2f color:c]; // bottom
+}
+
+- (void)drawLetterT:(NSMutableData *)data x:(float)x y:(float)y size:(float)s color:(vector_float4)c {
+    [self addQuadToVertexData:data x:x y:y width:s*0.8f height:s*0.2f color:c]; // top
+    [self addQuadToVertexData:data x:x y:y-s*0.5f width:s*0.2f height:s*1.0f color:c]; // vertical
+}
+
+- (void)drawLetterU:(NSMutableData *)data x:(float)x y:(float)y size:(float)s color:(vector_float4)c {
+    [self addQuadToVertexData:data x:x-s*0.3f y:y-s*0.4f width:s*0.2f height:s*0.8f color:c]; // left
+    [self addQuadToVertexData:data x:x+s*0.3f y:y-s*0.4f width:s*0.2f height:s*0.8f color:c]; // right
+    [self addQuadToVertexData:data x:x y:y-s*1.0f width:s*0.8f height:s*0.2f color:c]; // bottom
+}
+
+- (void)drawLetterW:(NSMutableData *)data x:(float)x y:(float)y size:(float)s color:(vector_float4)c {
+    [self addQuadToVertexData:data x:x-s*0.3f y:y-s*0.5f width:s*0.2f height:s*1.2f color:c]; // left
+    [self addQuadToVertexData:data x:x+s*0.3f y:y-s*0.5f width:s*0.2f height:s*1.2f color:c]; // right
+    [self addQuadToVertexData:data x:x y:y-s*0.8f width:s*0.2f height:s*0.4f color:c]; // middle bottom
+}
+
+- (void)drawLetterY:(NSMutableData *)data x:(float)x y:(float)y size:(float)s color:(vector_float4)c {
+    [self addQuadToVertexData:data x:x-s*0.3f y:y-s*0.2f width:s*0.2f height:s*0.4f color:c]; // top left
+    [self addQuadToVertexData:data x:x+s*0.3f y:y-s*0.2f width:s*0.2f height:s*0.4f color:c]; // top right
+    [self addQuadToVertexData:data x:x y:y-s*0.7f width:s*0.2f height:s*0.8f color:c]; // bottom middle
+}
+
+- (void)drawDigit:(NSMutableData *)data digit:(int)digit x:(float)x y:(float)y size:(float)s color:(vector_float4)c {
+    switch (digit) {
+        case 0:
+            [self addQuadToVertexData:data x:x y:y width:s*0.6f height:s*0.2f color:c]; // top
+            [self addQuadToVertexData:data x:x-s*0.2f y:y-s*0.5f width:s*0.2f height:s*1.0f color:c]; // left
+            [self addQuadToVertexData:data x:x+s*0.2f y:y-s*0.5f width:s*0.2f height:s*1.0f color:c]; // right
+            [self addQuadToVertexData:data x:x y:y-s*1.0f width:s*0.6f height:s*0.2f color:c]; // bottom
+            break;
+        case 1:
+            [self addQuadToVertexData:data x:x y:y-s*0.5f width:s*0.2f height:s*1.2f color:c]; // vertical
+            break;
+        case 2:
+            [self addQuadToVertexData:data x:x y:y width:s*0.6f height:s*0.2f color:c]; // top
+            [self addQuadToVertexData:data x:x+s*0.2f y:y-s*0.2f width:s*0.2f height:s*0.4f color:c]; // top right
+            [self addQuadToVertexData:data x:x y:y-s*0.5f width:s*0.6f height:s*0.2f color:c]; // middle
+            [self addQuadToVertexData:data x:x-s*0.2f y:y-s*0.8f width:s*0.2f height:s*0.4f color:c]; // bottom left
+            [self addQuadToVertexData:data x:x y:y-s*1.0f width:s*0.6f height:s*0.2f color:c]; // bottom
+            break;
+        case 3:
+            [self addQuadToVertexData:data x:x y:y width:s*0.6f height:s*0.2f color:c]; // top
+            [self addQuadToVertexData:data x:x+s*0.2f y:y-s*0.5f width:s*0.2f height:s*1.0f color:c]; // right
+            [self addQuadToVertexData:data x:x y:y-s*0.5f width:s*0.6f height:s*0.2f color:c]; // middle
+            [self addQuadToVertexData:data x:x y:y-s*1.0f width:s*0.6f height:s*0.2f color:c]; // bottom
+            break;
+        case 4:
+            [self addQuadToVertexData:data x:x-s*0.2f y:y-s*0.2f width:s*0.2f height:s*0.6f color:c]; // top left
+            [self addQuadToVertexData:data x:x+s*0.2f y:y-s*0.5f width:s*0.2f height:s*1.2f color:c]; // right
+            [self addQuadToVertexData:data x:x y:y-s*0.5f width:s*0.6f height:s*0.2f color:c]; // middle
+            break;
+        case 5:
+            [self addQuadToVertexData:data x:x y:y width:s*0.6f height:s*0.2f color:c]; // top
+            [self addQuadToVertexData:data x:x-s*0.2f y:y-s*0.2f width:s*0.2f height:s*0.4f color:c]; // top left
+            [self addQuadToVertexData:data x:x y:y-s*0.5f width:s*0.6f height:s*0.2f color:c]; // middle
+            [self addQuadToVertexData:data x:x+s*0.2f y:y-s*0.8f width:s*0.2f height:s*0.4f color:c]; // bottom right
+            [self addQuadToVertexData:data x:x y:y-s*1.0f width:s*0.6f height:s*0.2f color:c]; // bottom
+            break;
+        case 6:
+            [self addQuadToVertexData:data x:x y:y width:s*0.6f height:s*0.2f color:c]; // top
+            [self addQuadToVertexData:data x:x-s*0.2f y:y-s*0.5f width:s*0.2f height:s*1.0f color:c]; // left
+            [self addQuadToVertexData:data x:x y:y-s*0.5f width:s*0.6f height:s*0.2f color:c]; // middle
+            [self addQuadToVertexData:data x:x+s*0.2f y:y-s*0.8f width:s*0.2f height:s*0.4f color:c]; // bottom right
+            [self addQuadToVertexData:data x:x y:y-s*1.0f width:s*0.6f height:s*0.2f color:c]; // bottom
+            break;
+        case 7:
+            [self addQuadToVertexData:data x:x y:y width:s*0.6f height:s*0.2f color:c]; // top
+            [self addQuadToVertexData:data x:x+s*0.2f y:y-s*0.5f width:s*0.2f height:s*1.2f color:c]; // right
+            break;
+        case 8:
+            [self addQuadToVertexData:data x:x y:y width:s*0.6f height:s*0.2f color:c]; // top
+            [self addQuadToVertexData:data x:x-s*0.2f y:y-s*0.5f width:s*0.2f height:s*1.0f color:c]; // left
+            [self addQuadToVertexData:data x:x+s*0.2f y:y-s*0.5f width:s*0.2f height:s*1.0f color:c]; // right
+            [self addQuadToVertexData:data x:x y:y-s*0.5f width:s*0.6f height:s*0.2f color:c]; // middle
+            [self addQuadToVertexData:data x:x y:y-s*1.0f width:s*0.6f height:s*0.2f color:c]; // bottom
+            break;
+        case 9:
+            [self addQuadToVertexData:data x:x y:y width:s*0.6f height:s*0.2f color:c]; // top
+            [self addQuadToVertexData:data x:x-s*0.2f y:y-s*0.2f width:s*0.2f height:s*0.4f color:c]; // top left
+            [self addQuadToVertexData:data x:x+s*0.2f y:y-s*0.5f width:s*0.2f height:s*1.0f color:c]; // right
+            [self addQuadToVertexData:data x:x y:y-s*0.5f width:s*0.6f height:s*0.2f color:c]; // middle
+            [self addQuadToVertexData:data x:x y:y-s*1.0f width:s*0.6f height:s*0.2f color:c]; // bottom
+            break;
     }
 }
 
